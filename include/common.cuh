@@ -45,11 +45,16 @@ using std::to_string;
 using std::vector;
 
 using uint = unsigned int;
-using vtx_t = unsigned int; // vertex_num < 4B
-using weight_t = unsigned int;
+// Full 64-bit graph types. Every quantity that scales with the size of the
+// graph — vertex ids, edge row-pointers, and edge weights — is 64-bit so the
+// framework can handle graphs with > 2^32 vertices, > 2^32 edges, and edge
+// weights that overflow uint32 (e.g. MOLIER_2016.bwcsr64 with 6.67B edges).
+using vtx_t = unsigned long long;
+using weight_t = unsigned long long;
+using edge_t = unsigned long long;
 using ulong = unsigned long;
 
-const unsigned int INFINIT = std::numeric_limits<uint>::max() - 1;
+const vtx_t INFINIT = std::numeric_limits<vtx_t>::max() - 1;
 
 #define TID_1D (threadIdx.x + blockIdx.x * blockDim.x)
 #define TOTAL_THREADS_1D (gridDim.x * blockDim.x)

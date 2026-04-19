@@ -47,11 +47,12 @@ template <> class Subgraph<NORMAL> {
 private:
   /* data */
 public:
-  vtx_t numNode = 0, numEdge = 0, capacity = 0;
+  vtx_t numNode = 0, capacity = 0;
+  edge_t numEdge = 0;
   vtx_t *lookup_buffer;
   vtx_t *vtx;
   uint *degreeBuffer;
-  vtx_t *vtx_ptr;
+  edge_t *vtx_ptr;
   vtx_t *edges;
   weight_t *weight;
 
@@ -65,13 +66,13 @@ public:
 
   Subgraph() {}
   ~Subgraph() {}
-  void reserve(vtx_t m, vtx_t n) {
+  void reserve(vtx_t m, edge_t n) {
     capacity = m;
     H_ERR(cudaMallocManaged(&vtx, m * sizeof(vtx_t)));
     H_ERR(cudaMallocManaged(&degreeBuffer, m * sizeof(uint)));
-    H_ERR(cudaMallocManaged(&lookup_buffer, m * sizeof(weight_t)));
+    H_ERR(cudaMallocManaged(&lookup_buffer, m * sizeof(vtx_t)));
 
-    H_ERR(cudaMallocManaged(&vtx_ptr, (m + 1) * sizeof(vtx_t)));
+    H_ERR(cudaMallocManaged(&vtx_ptr, (m + 1) * sizeof(edge_t)));
     H_ERR(cudaMallocManaged(&edges, n * sizeof(vtx_t)));
     H_ERR(cudaMallocManaged(&weight, n * sizeof(weight_t)));
 
@@ -84,15 +85,15 @@ public:
   }
   __forceinline__ __device__ vtx_t get_vtx(vtx_t id) { return vtx[id]; }
   __forceinline__ __device__ uint get_vtx_degree(vtx_t id) {
-    return vtx_ptr[id + 1] - vtx_ptr[id];
+    return static_cast<uint>(vtx_ptr[id + 1] - vtx_ptr[id]);
   }
-  __forceinline__ __device__ vtx_t get_edge_id(vtx_t id, vtx_t offset) {
+  __forceinline__ __device__ edge_t get_edge_id(vtx_t id, edge_t offset) {
     return vtx_ptr[id] + offset;
   }
-  __forceinline__ __device__ vtx_t get_edge_dst(vtx_t id, vtx_t offset) {
+  __forceinline__ __device__ vtx_t get_edge_dst(vtx_t id, edge_t offset) {
     return edges[vtx_ptr[id] + offset];
   }
-  __forceinline__ __device__ vtx_t get_edge_weight(vtx_t id, vtx_t offset) {
+  __forceinline__ __device__ weight_t get_edge_weight(vtx_t id, edge_t offset) {
     return weight[vtx_ptr[id] + offset];
   }
 
@@ -108,7 +109,7 @@ public:
     cub::DeviceScan::InclusiveSum(d_temp_storage, temp_storage_bytes,
                                   degreeBuffer, vtx_ptr + 1, numNode);
     if (temp_storage_bytes > temp_storage_bytes_reserved) {
-      LOG("re-mallocing %d buffer for scan, old %d \n", temp_storage_bytes,
+      LOG("re-mallocing %zu buffer for scan, old %zu \n", temp_storage_bytes,
           temp_storage_bytes_reserved);
       cudaFree(d_temp_storage);
       cudaMalloc(&d_temp_storage, temp_storage_bytes);
@@ -124,12 +125,12 @@ public:
   void construct(graph_t G, worklist_t wl) {
     // LOG("constructing for %d vtx subgraph\n",numNode);
     // numEdge = vtx_ptr[numNode];
-    cudaMemcpy(&numEdge, &vtx_ptr[numNode], sizeof(vtx_t),
+    cudaMemcpy(&numEdge, &vtx_ptr[numNode], sizeof(edge_t),
                cudaMemcpyDeviceToHost);
     //  let vtx_ptr,degreeBuffer,lookup_buffer be local
     for (size_t i = 0; i < numNode; i++) {
       memcpy(&edges[vtx_ptr[i]], &G.adjncy[G.xadj[lookup_buffer[i]]],
-             degreeBuffer[i] * sizeof(vtx_t));
+             static_cast<size_t>(degreeBuffer[i]) * sizeof(vtx_t));
       //  weight
     }
   }
@@ -137,9 +138,9 @@ public:
   void move() {
     H_ERR(cudaMemPrefetchAsync(vtx, numNode * sizeof(vtx_t), FLAGS_device,
                                nullptr));
-    H_ERR(cudaMemPrefetchAsync(vtx_ptr, (numNode + 1) * sizeof(vtx_t),
+    H_ERR(cudaMemPrefetchAsync(vtx_ptr, (numNode + 1) * sizeof(edge_t),
                                FLAGS_device, nullptr));
-    H_ERR(cudaMemPrefetchAsync(degreeBuffer, numNode * sizeof(vtx_t),
+    H_ERR(cudaMemPrefetchAsync(degreeBuffer, numNode * sizeof(uint),
                                FLAGS_device, nullptr));
     H_ERR(cudaMemPrefetchAsync(lookup_buffer, capacity * sizeof(vtx_t),
                                FLAGS_device, nullptr));

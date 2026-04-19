@@ -102,5 +102,18 @@ __forceinline__ __device__ uint atomicAggInc(uint *ctr)
   return g.shfl(warp_res, 0) + g.thread_rank();
 }
 
+// 64-bit overload for the warp-aggregated atomic increment. Same semantics as
+// the 32-bit version above, but returns an `unsigned long long` index so the
+// caller can push into arrays larger than 2^32.
+__forceinline__ __device__ unsigned long long
+atomicAggInc(unsigned long long *ctr)
+{
+  auto g = coalesced_threads();
+  unsigned long long warp_res;
+  if (g.thread_rank() == 0)
+    warp_res = atomicAdd(ctr, (unsigned long long)g.size());
+  return g.shfl(warp_res, 0) + (unsigned long long)g.thread_rank();
+}
+
 } // namespace intrinsics
 #endif

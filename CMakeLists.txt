@@ -22,7 +22,8 @@ set(EXTRA_LIBS gflags )
 
 #-Xcompiler -fopenmp
 
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_75,code=sm_75  -dc -std=c++11 ")
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -std=c++14 ")
+set(CMAKE_CUDA_ARCHITECTURES 86)
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
   message("Debug mode")
   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -g -G -Xcompiler   -ggdb  -lnvrt  ")
@@ -33,42 +34,62 @@ endif()
 
 set(CUDA_VERBOSE_BUILD ON)
 
-include_directories(include deps/cub)
+include_directories(include)
 
 if(NOT DEFINED CMAKE_CUDA_STANDARD)
     set(CMAKE_CUDA_STANDARD 11)
     set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 endif()
 
-add_executable(bfs 
+add_executable(bfs
                 src/worklist.cu
                samples/bfs/bfs.cu
 					     samples/bfs/main.cu)
+set_target_properties(bfs PROPERTIES
+  CUDA_SEPARABLE_COMPILATION ON
+  CUDA_RESOLVE_DEVICE_SYMBOLS ON
+  CUDA_ARCHITECTURES "86")
 target_link_libraries(bfs ${EXTRA_LIBS})
 
-add_executable(sssp 
+add_executable(sssp
                 src/worklist.cu
                samples/sssp/sssp.cu
 					     samples/sssp/main.cu)
+set_target_properties(sssp PROPERTIES
+  CUDA_SEPARABLE_COMPILATION ON
+  CUDA_RESOLVE_DEVICE_SYMBOLS ON
+  CUDA_ARCHITECTURES "86")
 target_link_libraries(sssp ${EXTRA_LIBS})
 
-add_executable(pr 
+add_executable(pr
                 src/worklist.cu
                samples/pagerank/pr.cu
 					     samples/pagerank/main.cu)
+set_target_properties(pr PROPERTIES
+  CUDA_SEPARABLE_COMPILATION ON
+  CUDA_RESOLVE_DEVICE_SYMBOLS ON
+  CUDA_ARCHITECTURES "86")
 target_link_libraries(pr ${EXTRA_LIBS})
 
-add_executable(cc 
+add_executable(cc
                 src/worklist.cu
                samples/cc/cc.cu
 					     samples/cc/main.cu)
+set_target_properties(cc PROPERTIES
+  CUDA_SEPARABLE_COMPILATION ON
+  CUDA_RESOLVE_DEVICE_SYMBOLS ON
+  CUDA_ARCHITECTURES "86")
 target_link_libraries(cc ${EXTRA_LIBS})
 
-add_executable(bfs_2s 
+add_executable(bfs_2s
                 src/worklist.cu
                 src/kernel.cu
                samples/bfs_2s/bfs_2s.cu
 					     samples/bfs_2s/main.cu)
+set_target_properties(bfs_2s PROPERTIES
+  CUDA_SEPARABLE_COMPILATION ON
+  CUDA_RESOLVE_DEVICE_SYMBOLS ON
+  CUDA_ARCHITECTURES "86")
 target_link_libraries(bfs_2s ${EXTRA_LIBS})
 
 #add_executable(grus

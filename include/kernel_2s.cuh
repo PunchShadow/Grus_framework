@@ -37,10 +37,11 @@ template <typename subgraph_t, typename updater_t, typename generator_t,
           typename job_t>
 __global__ void push_kernel_subgraph(subgraph_t G, worklist::Worklist wl_c,
                                      char *flag, job_t job) {
-  int tid = TID_1D;
-  vtx_t src, level, laneid, dst, wpid, edge_id, local_id;
-  wpid = tid / 32;
-  laneid = threadIdx.x % 32;
+  size_t tid = TID_1D;
+  uint laneid = threadIdx.x % 32;
+  vtx_t wpid = static_cast<vtx_t>(tid / 32);
+  vtx_t src, dst, local_id;
+  edge_t edge_id;
   updater_t updater;
   generator_t generator;
   if (wpid < *wl_c.count) {
@@ -48,8 +49,7 @@ __global__ void push_kernel_subgraph(subgraph_t G, worklist::Worklist wl_c,
     local_id = G.get_vtx_from_id(src);
     // if (tid == 0)
     //   printf("tid 0 process %d with local_id %d \n", src,local_id);
-    for (size_t offset = laneid; offset < G.get_vtx_degree(wpid);
-         offset += 32) {
+    for (edge_t offset = laneid; offset < G.get_vtx_degree(wpid); offset += 32) {
       edge_id = G.get_edge_id(local_id, offset);
       dst = G.get_edge_dst(local_id, offset);
       generator(updater(src, dst, edge_id, job), flag, dst);

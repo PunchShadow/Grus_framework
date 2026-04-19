@@ -16,14 +16,14 @@ __global__ void get_flag_num(char *flag1, vtx_t size, vtx_t *num)
   }
 }
 __global__ void compute_lookup_buffer(vtx_t *vtx,
-                                      vtx_t *vtx_ptr, vtx_t *xadj,
-                                      uint *lookup_buffer, uint *outDegree,
+                                      edge_t *vtx_ptr, edge_t *xadj,
+                                      vtx_t *lookup_buffer, uint *outDegree,
                                       vtx_t size) {
   size_t tid = blockDim.x * blockIdx.x + threadIdx.x;
   if (tid < size) {
     // vtx_t id=wl.data[tid];
     lookup_buffer[vtx[tid]] = tid;
-    outDegree[tid] = xadj[vtx[tid] + 1] - xadj[vtx[tid]];
+    outDegree[tid] = static_cast<uint>(xadj[vtx[tid] + 1] - xadj[vtx[tid]]);
   }
 }
 

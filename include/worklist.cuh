@@ -85,13 +85,13 @@ public:
 };
 __global__ void flag_to_wl(Worklist wl, char *flag1, vtx_t size);
 __global__ void wl_to_flag(Worklist wl, char *flag1, vtx_t size);
-__global__ void get_outdegree(Worklist wl, vtx_t *vtx_ptr, vtx_t *xadj,
+__global__ void get_outdegree(Worklist wl, edge_t *vtx_ptr, edge_t *xadj,
                               uint *outDegree, vtx_t size);
 __global__ void flag_to_wl_remote_local(Worklist wl_remote, Worklist wl_local,
                                         char *flag_local, char *flag_active,
                                         vtx_t size);
-__global__ void compute_lookup_buffer(vtx_t *vtx, vtx_t *vtx_ptr,
-                                      vtx_t *xadj, uint *lookup_buffer,
+__global__ void compute_lookup_buffer(vtx_t *vtx, edge_t *vtx_ptr,
+                                      edge_t *xadj, vtx_t *lookup_buffer,
                                       uint *outDegree, vtx_t size);
 __global__ void get_flag_num(char *flag1, vtx_t size, vtx_t *num);
 } // namespace worklist

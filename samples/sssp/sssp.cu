@@ -15,27 +15,27 @@ DECLARE_int32(src);
 DECLARE_bool(pull);
 namespace sssp {
 
-__global__ void SSSPInit(uint *label, int nnodes, vtx_t source) {
-  int tid = TID_1D;
+__global__ void SSSPInit(weight_t *label, vtx_t nnodes, vtx_t source) {
+  size_t tid = TID_1D;
   if (tid < nnodes) {
     label[tid] = tid == source ? 0 : INFINIT;
   }
 }
 class job_t {
 public:
-  uint src;
-  uint *label;
-  uint itr = 0;
+  vtx_t src;
+  weight_t *label;
+  vtx_t itr = 0;
   vtx_t numNode;
   weight_t *adjwgt = nullptr;
-  void operator()(vtx_t _numNode, uint _src, weight_t *_adjwgt) {
+  void operator()(vtx_t _numNode, vtx_t _src, weight_t *_adjwgt) {
     numNode = _numNode;
     src = _src;
     adjwgt = _adjwgt;
     init();
   }
   void init() {
-    H_ERR(cudaMallocManaged(&label, numNode * sizeof(uint)));
+    H_ERR(cudaMallocManaged(&label, numNode * sizeof(weight_t)));
     SSSPInit<<<numNode / BLOCK_SIZE + 1, BLOCK_SIZE>>>(label, numNode, src);
   }
   void prepare(){}
@@ -50,7 +50,7 @@ public:
 
 struct updater {
   __forceinline__ __device__ bool operator()(vtx_t src, vtx_t dst,
-                                             vtx_t edge_id, job_t job) {
+                                             edge_t edge_id, job_t job) {
     if (job.label[dst] > job.label[src] + job.adjwgt[edge_id]) {
       job.label[dst] = job.label[src] + job.adjwgt[edge_id];
       return true;

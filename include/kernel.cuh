@@ -19,17 +19,17 @@ template <typename updater_t, typename generator_t, typename pull_selector_t,
           typename job_t>
 __global__ void pull_kernel(graph_t<CSC> G, char *flag1, char *flag2,
                             char *finished, job_t job) {
-  int tid = TID_1D;
-  vtx_t dst, level, laneid, src, wpid;
-  wpid = tid / 32;
-  laneid = threadIdx.x % 32;
+  size_t tid = TID_1D;
+  uint laneid = threadIdx.x % 32;
+  vtx_t wpid = static_cast<vtx_t>(tid / 32);
+  vtx_t dst, src;
   updater_t updater;
   generator_t generator;
   pull_selector_t pull_selector;
   if (wpid < job.numNode) {
     if (pull_selector(wpid, job)) {
       dst = wpid;
-      for (vtx_t edge_id = G.xadj[dst] + laneid; edge_id < G.xadj[dst + 1];
+      for (edge_t edge_id = G.xadj[dst] + laneid; edge_id < G.xadj[dst + 1];
            edge_id += 32) {
         src = G.adjncy[edge_id];
         if (flag1[src])
@@ -43,15 +43,15 @@ template <typename graph_t, typename updater_t, typename generator_t,
           typename job_t>
 __global__ void push_kernel(graph_t G, worklist::Worklist wl_c,
                             worklist::Worklist wl_n, job_t job) {
-  int tid = TID_1D;
-  vtx_t src, laneid, dst, wpid;
-  wpid = tid / 32;
-  laneid = threadIdx.x % 32;
+  size_t tid = TID_1D;
+  uint laneid = threadIdx.x % 32;
+  vtx_t wpid = static_cast<vtx_t>(tid / 32);
+  vtx_t src, dst;
   updater_t updater;
   generator_t generator;
   if (wpid < *wl_c.count) {
     src = wl_c.data[wpid];
-    for (vtx_t edge_id = G.xadj[src] + laneid; edge_id < G.xadj[src + 1];
+    for (edge_t edge_id = G.xadj[src] + laneid; edge_id < G.xadj[src + 1];
          edge_id += 32) {
       dst = G.adjncy[edge_id];
       generator(updater(src, dst, edge_id, job), wl_n, dst);
@@ -63,15 +63,15 @@ template <typename graph_t, typename updater_t, typename generator_t,
           typename job_t>
 __global__ void push_kernel(const graph_t __restrict__ G,
                             worklist::Worklist wl_c, char *flag, job_t job) {
-  int tid = TID_1D;
-  vtx_t src, level, laneid, dst, wpid;
-  wpid = tid / 32;
-  laneid = threadIdx.x % 32;
+  size_t tid = TID_1D;
+  uint laneid = threadIdx.x % 32;
+  vtx_t wpid = static_cast<vtx_t>(tid / 32);
+  vtx_t src, dst;
   updater_t updater;
   generator_t generator;
   if (wpid < *wl_c.count) {
     src = wl_c.data[wpid];
-    for (vtx_t edge_id = G.xadj[src] + laneid; edge_id < G.xadj[src + 1];
+    for (edge_t edge_id = G.xadj[src] + laneid; edge_id < G.xadj[src + 1];
          edge_id += 32) {
       dst = G.adjncy[edge_id];
       generator(updater(src, dst, edge_id, job), flag, dst);
@@ -83,16 +83,16 @@ template <typename graph_t, typename updater_t, typename generator_t,
           typename job_t>
 __global__ void push_kernel(const graph_t __restrict__ G, char *flag1,
                             char *flag2, job_t job) {
-  int tid = TID_1D;
-  vtx_t src, level, laneid, dst, wpid;
-  wpid = tid / 32;
-  laneid = threadIdx.x % 32;
+  size_t tid = TID_1D;
+  uint laneid = threadIdx.x % 32;
+  vtx_t wpid = static_cast<vtx_t>(tid / 32);
+  vtx_t src, dst;
   updater_t updater;
   generator_t generator;
   if (wpid < job.numNode) {
     if (flag1[wpid]) {
       src = wpid;
-      for (vtx_t edge_id = G.xadj[src] + laneid; edge_id < G.xadj[src + 1];
+      for (edge_t edge_id = G.xadj[src] + laneid; edge_id < G.xadj[src + 1];
            edge_id += 32) {
         dst = G.adjncy[edge_id];
         generator(updater(src, dst, edge_id, job), flag2, dst);
@@ -104,16 +104,16 @@ template <typename graph_t, typename updater_t, typename generator_t,
           typename job_t>
 __global__ void push_kernel(graph_t G, char *flag1, char *flag2, char *finished,
                             job_t job) {
-  int tid = TID_1D;
-  vtx_t src, level, laneid, dst, wpid;
-  wpid = tid / 32;
-  laneid = threadIdx.x % 32;
+  size_t tid = TID_1D;
+  uint laneid = threadIdx.x % 32;
+  vtx_t wpid = static_cast<vtx_t>(tid / 32);
+  vtx_t src, dst;
   updater_t updater;
   generator_t generator;
   if (wpid < job.numNode) {
     if (flag1[wpid]) {
       src = wpid;
-      for (vtx_t edge_id = G.xadj[src] + laneid; edge_id < G.xadj[src + 1];
+      for (edge_t edge_id = G.xadj[src] + laneid; edge_id < G.xadj[src + 1];
            edge_id += 32) {
         dst = G.adjncy[edge_id];
         generator(updater(src, dst, edge_id, job), flag2, dst, finished);

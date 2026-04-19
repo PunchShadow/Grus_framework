@@ -32,8 +32,8 @@ __device__ char char_atomicCAS(char *addr, char cmp, char val) {
   } while (assumed != old);
   return (char)((assumed >> al_offset) & 0xFFU);
 }
-__global__ void CCInit(uint *label, int nnodes, vtx_t source) {
-  int tid = TID_1D;
+__global__ void CCInit(vtx_t *label, vtx_t nnodes, vtx_t source) {
+  size_t tid = TID_1D;
   if (tid < nnodes) {
     label[tid] = tid;
   }
@@ -42,18 +42,18 @@ __global__ void CCInit(uint *label, int nnodes, vtx_t source) {
 class job_t {
 
 public:
-  uint src;
-  uint *label;
-  uint itr = 0;
+  vtx_t src;
+  vtx_t *label;
+  vtx_t itr = 0;
   vtx_t numNode;
   weight_t *adjwgt = nullptr;
-  void operator()(vtx_t _numNode, uint _src) {
+  void operator()(vtx_t _numNode, vtx_t _src) {
     numNode = _numNode;
     src = _src;
     init();
   }
   void init() {
-    H_ERR(cudaMallocManaged(&label, numNode * sizeof(uint)));
+    H_ERR(cudaMallocManaged(&label, numNode * sizeof(vtx_t)));
     CCInit<<<numNode / BLOCK_SIZE + 1, BLOCK_SIZE>>>(label, numNode, src);
   }
   void prepare() {}
@@ -68,7 +68,7 @@ public:
 
 struct updater {
   __forceinline__ __device__ bool operator()(vtx_t src, vtx_t dst,
-                                             vtx_t edge_id, job_t job) {
+                                             edge_t edge_id, job_t job) {
     if (job.label[dst] > job.label[src]) {
       atomicMin(&job.label[dst], job.label[src]);
       // if (!char_atomicCAS(&flag[dstId], 0, 1)) //need F.flag

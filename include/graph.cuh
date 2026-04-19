@@ -35,17 +35,19 @@ template <graphFmt fmt> class graph_chunk {
 public:
   uint64_t numNode;
   uint64_t numEdge;
-  vtx_t *xadj, *vwgt, *adjncy, *adjncy_global;
+  edge_t *xadj;
+  vtx_t *vwgt, *adjncy, *adjncy_global;
   // vtx_t *xadj_d, *vwgt_d, *adjncy_d;
   weight_t *adjwgt, *adjwgt_global;
   uint64_t node_in_chunk;
-  uint64_t edge_in_chunk;
-  vtx_t start_v, end_v, start_e, end_e;
+  edge_t edge_in_chunk;
+  vtx_t start_v, end_v;
+  edge_t start_e, end_e;
   uint device_id;
   bool weighted = false;
 
   graph_chunk(uint64_t _numNode, uint64_t _numEdge, uint64_t _node_in_chunk,
-              uint64_t _edge_in_chunk, vtx_t _start_v, vtx_t _start_e,
+              edge_t _edge_in_chunk, vtx_t _start_v, edge_t _start_e,
               uint _device_id, vtx_t *_adjncy_global,
               weight_t *adjwgt_global = nullptr) {
     numNode = _numNode;
@@ -62,25 +64,25 @@ public:
     if (adjwgt_global != nullptr)
       weighted = true;
     H_ERR(cudaMallocManaged(&xadj, (numNode + 1) *
-                                       sizeof(vtx_t))); // change to all xadj
+                                       sizeof(edge_t))); // change to all xadj
     H_ERR(cudaMallocManaged(&adjncy, edge_in_chunk * sizeof(vtx_t)));
     if (weighted)
       H_ERR(cudaMallocManaged(&adjwgt, edge_in_chunk * sizeof(weight_t)));
   }
-  __forceinline__ __device__ vtx_t access_edge(vtx_t src, vtx_t offset) {
+  __forceinline__ __device__ vtx_t access_edge(vtx_t src, edge_t offset) {
     if ((start_v <= src) && (src <= end_v)) // local
       return adjncy[xadj[src] + offset - start_e];
     else
       return adjncy_global[xadj[src] + offset];
   }
-  __forceinline__ __device__ vtx_t access_weight(vtx_t src, vtx_t offset) {
+  __forceinline__ __device__ weight_t access_weight(vtx_t src, edge_t offset) {
     if ((start_v <= src) && (src <= end_v))
       return adjwgt[xadj[src] + offset - start_e];
     else
       return adjwgt_global[xadj[src] + offset];
   }
-  __forceinline__ __device__ vtx_t get_degree(vtx_t id) {
-    return xadj[id + 1] - xadj[id];
+  __forceinline__ __device__ uint get_degree(vtx_t id) {
+    return static_cast<uint>(xadj[id + 1] - xadj[id]);
   }
   void distribute(int deviceId, cudaStream_t *stream) { // = NULL
     // cudaSetDevice(deviceId);
@@ -88,7 +90,7 @@ public:
     // print::PrintResults(xadj, 10);
     // print::PrintResults(adjncy, 10);
     // print::PrintResults(adjwgt, 10);
-    H_ERR(cudaMemPrefetchAsync(xadj, (numNode + 1) * sizeof(vtx_t), deviceId,
+    H_ERR(cudaMemPrefetchAsync(xadj, (numNode + 1) * sizeof(edge_t), deviceId,
                                nullptr));
     H_ERR(cudaMemPrefetchAsync(adjncy, edge_in_chunk * sizeof(vtx_t), deviceId,
                                *stream));
@@ -116,11 +118,12 @@ public:
   uint64_t numNode;
   uint64_t numEdge;
   // graph
-  vtx_t *xadj, *vwgt, *adjncy;
+  edge_t *xadj = nullptr;
+  vtx_t *vwgt = nullptr, *adjncy = nullptr;
   // vtx_t *xadj_d, *vwgt_d, *adjncy_d;
-  weight_t *adjwgt = nullptr, *adjwgt_d;
-  uint *inDegree;
-  uint *outDegree;
+  weight_t *adjwgt = nullptr, *adjwgt_d = nullptr;
+  uint *inDegree = nullptr;
+  uint *outDegree = nullptr;
   bool weighted;
   bool needWeight;
   uint64_t mem_used = 0;
@@ -143,12 +146,12 @@ public:
           adjwgt));
       // memcpy(chunks[i].xadj, &xadj[i * num_vtx_per_chunk],
       //        num_vtx_per_chunk + 1);
-      memcpy(chunks[i].xadj, xadj, numNode + 1);
+      memcpy(chunks[i].xadj, xadj, (numNode + 1) * sizeof(edge_t));
       memcpy(chunks[i].adjncy, &adjncy[xadj[i * num_vtx_per_chunk]],
-             chunks[i].edge_in_chunk);
+             chunks[i].edge_in_chunk * sizeof(vtx_t));
       if (needWeight)
         memcpy(chunks[i].adjwgt, &adjwgt[xadj[i * num_vtx_per_chunk]],
-               chunks[i].edge_in_chunk);
+               chunks[i].edge_in_chunk * sizeof(weight_t));
     }
     chunks.push_back(graph_chunk<fmt>(
         numNode, numEdge, num_vtx_per_chunk + numNode % num_gpu + 1,
@@ -158,93 +161,110 @@ public:
     // memcpy(chunks[num_gpu - 1].xadj, &xadj[(num_gpu - 1) *
     // num_vtx_per_chunk],
     //        chunks[num_gpu - 1].node_in_chunk+1);
-    memcpy(chunks[num_gpu - 1].xadj, xadj, numNode + 1);
+    memcpy(chunks[num_gpu - 1].xadj, xadj, (numNode + 1) * sizeof(edge_t));
     memcpy(chunks[num_gpu - 1].adjncy,
            &adjncy[xadj[(num_gpu - 1) * num_vtx_per_chunk]],
-           chunks[num_gpu - 1].edge_in_chunk);
+           chunks[num_gpu - 1].edge_in_chunk * sizeof(vtx_t));
     if (needWeight)
       memcpy(chunks[num_gpu - 1].adjwgt,
              &adjwgt[xadj[(num_gpu - 1) * num_vtx_per_chunk]],
-             chunks[num_gpu - 1].edge_in_chunk);
+             chunks[num_gpu - 1].edge_in_chunk * sizeof(weight_t));
   }
   void Set_Mem_Policy(cudaStream_t *stream = NULL) { //& =NULL
     size_t avail, total;
     cudaMemGetInfo(&avail, &total);
+    const size_t xadj_bytes = (numNode + 1) * sizeof(edge_t);
+    const size_t adjncy_bytes = numEdge * sizeof(vtx_t);
+    const size_t adjwgt_bytes = numEdge * sizeof(weight_t);
+    LOG("avail=%.2f GB total=%.2f GB mem_used=%.2f GB xadj=%.2f GB adjncy=%.2f "
+        "GB adjwgt=%.2f GB\n",
+        avail / 1e9, total / 1e9, mem_used / 1e9, xadj_bytes / 1e9,
+        adjncy_bytes / 1e9, adjwgt_bytes / 1e9);
     if (FLAGS_opt) {
       LOG("using opt\n");
-      H_ERR(cudaMemPrefetchAsync(xadj, (numNode + 1) * sizeof(vtx_t),
-                                 FLAGS_device, *stream));
-      if (mem_used < avail) {
-        H_ERR(cudaMemPrefetchAsync(adjncy, numEdge * sizeof(vtx_t),
-                                   FLAGS_device, *stream));
+      // Never try to prefetch the graph if it's larger than the GPU free pool —
+      // cudaMemPrefetchAsync fails fast with invalid argument. Let the UM
+      // driver page-fault the hot portions on demand instead.
+      if (xadj_bytes + adjncy_bytes + (needWeight ? adjwgt_bytes : 0) <=
+          avail) {
+        H_ERR(cudaMemPrefetchAsync(xadj, xadj_bytes, FLAGS_device, *stream));
+        H_ERR(cudaMemPrefetchAsync(adjncy, adjncy_bytes, FLAGS_device,
+                                   *stream));
         if (needWeight)
-          H_ERR(cudaMemPrefetchAsync(adjwgt, numEdge * sizeof(weight_t),
-                                     FLAGS_device, *stream));
-      } else {
+          H_ERR(cudaMemPrefetchAsync(adjwgt, adjwgt_bytes, FLAGS_device,
+                                     *stream));
+      } else if (xadj_bytes < avail) {
+        // Keep xadj resident (hot path for all kernels) and split the
+        // remaining budget between adjncy and adjwgt if present. Clamp to the
+        // actual buffer sizes so we never overflow the allocation.
+        H_ERR(cudaMemPrefetchAsync(xadj, xadj_bytes, FLAGS_device, *stream));
+        size_t budget = avail - xadj_bytes;
         if (needWeight) {
-          H_ERR(cudaMemPrefetchAsync(
-              adjncy, (avail - (numNode + 1) * sizeof(vtx_t)) / 2, FLAGS_device,
-              *stream));
-          H_ERR(cudaMemPrefetchAsync(
-              adjwgt, (avail - (numNode + 1) * sizeof(vtx_t)) / 2, FLAGS_device,
-              *stream));
-        } else
-          H_ERR(cudaMemPrefetchAsync(adjncy,
-                                     avail - (numNode + 1) * sizeof(vtx_t),
+          size_t half = budget / 2;
+          H_ERR(cudaMemPrefetchAsync(adjncy, std::min(half, adjncy_bytes),
                                      FLAGS_device, *stream));
+          H_ERR(cudaMemPrefetchAsync(adjwgt, std::min(half, adjwgt_bytes),
+                                     FLAGS_device, *stream));
+        } else {
+          H_ERR(cudaMemPrefetchAsync(adjncy, std::min(budget, adjncy_bytes),
+                                     FLAGS_device, *stream));
+        }
+      } else {
+        LOG("graph xadj alone exceeds GPU free pool (%.2f GB); skipping "
+            "prefetch and relying on UM paging\n",
+            xadj_bytes / 1e9);
       }
       if (mem_used > avail) //
       {
-        H_ERR(cudaMemAdvise(xadj, (numNode + 1) * sizeof(vtx_t),
-                            cudaMemAdviseSetAccessedBy, FLAGS_device));
-        H_ERR(cudaMemAdvise(adjncy, numEdge * sizeof(vtx_t),
-                            cudaMemAdviseSetAccessedBy, FLAGS_device));
+        H_ERR(cudaMemAdvise(xadj, xadj_bytes, cudaMemAdviseSetAccessedBy,
+                            FLAGS_device));
+        H_ERR(cudaMemAdvise(adjncy, adjncy_bytes, cudaMemAdviseSetAccessedBy,
+                            FLAGS_device));
         if (needWeight)
-          H_ERR(cudaMemAdvise(adjwgt, numEdge * sizeof(weight_t),
-                              cudaMemAdviseSetAccessedBy, FLAGS_device));
+          H_ERR(cudaMemAdvise(adjwgt, adjwgt_bytes, cudaMemAdviseSetAccessedBy,
+                              FLAGS_device));
       }
     } else {
       if (FLAGS_pf) {
         LOG("pfing\n");
-        H_ERR(cudaMemPrefetchAsync(xadj, (numNode + 1) * sizeof(vtx_t),
-                                   FLAGS_device, *stream));
-        H_ERR(cudaMemPrefetchAsync(adjncy, numEdge * sizeof(vtx_t),
-                                   FLAGS_device, *stream));
+        H_ERR(cudaMemPrefetchAsync(xadj, xadj_bytes, FLAGS_device, *stream));
+        H_ERR(cudaMemPrefetchAsync(adjncy, adjncy_bytes, FLAGS_device,
+                                   *stream));
         if (needWeight)
-          H_ERR(cudaMemPrefetchAsync(adjwgt, numEdge * sizeof(weight_t),
-                                     FLAGS_device, *stream));
+          H_ERR(cudaMemPrefetchAsync(adjwgt, adjwgt_bytes, FLAGS_device,
+                                     *stream));
       }
       if (FLAGS_ab) //
       {
         LOG("AB hint\n");
-        H_ERR(cudaMemAdvise(xadj, (numNode + 1) * sizeof(vtx_t),
-                            cudaMemAdviseSetAccessedBy, FLAGS_device));
-        H_ERR(cudaMemAdvise(adjncy, numEdge * sizeof(vtx_t),
-                            cudaMemAdviseSetAccessedBy, FLAGS_device));
+        H_ERR(cudaMemAdvise(xadj, xadj_bytes, cudaMemAdviseSetAccessedBy,
+                            FLAGS_device));
+        H_ERR(cudaMemAdvise(adjncy, adjncy_bytes, cudaMemAdviseSetAccessedBy,
+                            FLAGS_device));
         if (needWeight)
-          H_ERR(cudaMemAdvise(adjwgt, numEdge * sizeof(weight_t),
-                              cudaMemAdviseSetAccessedBy, FLAGS_device));
+          H_ERR(cudaMemAdvise(adjwgt, adjwgt_bytes, cudaMemAdviseSetAccessedBy,
+                              FLAGS_device));
       }
       if (FLAGS_rm) //
       {
         LOG("RM hint\n");
-        H_ERR(cudaMemAdvise(xadj, (numNode + 1) * sizeof(vtx_t),
-                            cudaMemAdviseSetReadMostly, FLAGS_device));
-        H_ERR(cudaMemAdvise(adjncy, numEdge * sizeof(vtx_t),
-                            cudaMemAdviseSetReadMostly, FLAGS_device));
+        H_ERR(cudaMemAdvise(xadj, xadj_bytes, cudaMemAdviseSetReadMostly,
+                            FLAGS_device));
+        H_ERR(cudaMemAdvise(adjncy, adjncy_bytes, cudaMemAdviseSetReadMostly,
+                            FLAGS_device));
         if (needWeight)
-          H_ERR(cudaMemAdvise(adjwgt, numEdge * sizeof(weight_t),
-                              cudaMemAdviseSetReadMostly, FLAGS_device));
+          H_ERR(cudaMemAdvise(adjwgt, adjwgt_bytes, cudaMemAdviseSetReadMostly,
+                              FLAGS_device));
       }
       if (FLAGS_pl) //
       {
         LOG("PL hint\n");
-        H_ERR(cudaMemAdvise(xadj, (numNode + 1) * sizeof(vtx_t),
-                            cudaMemAdviseSetPreferredLocation, FLAGS_device));
-        H_ERR(cudaMemAdvise(adjncy, numEdge * sizeof(vtx_t),
+        H_ERR(cudaMemAdvise(xadj, xadj_bytes, cudaMemAdviseSetPreferredLocation,
+                            FLAGS_device));
+        H_ERR(cudaMemAdvise(adjncy, adjncy_bytes,
                             cudaMemAdviseSetPreferredLocation, FLAGS_device));
         if (needWeight)
-          H_ERR(cudaMemAdvise(adjwgt, numEdge * sizeof(weight_t),
+          H_ERR(cudaMemAdvise(adjwgt, adjwgt_bytes,
                               cudaMemAdviseSetPreferredLocation, FLAGS_device));
       }
     }
@@ -269,34 +289,38 @@ public:
 
 /* Modified from
  * https://github.com/scipy/scipy/blob/master/scipy/sparse/sparsetools/csr.h
- * Compute B = A for CSR matrix A, CSC matrix B. */
-template <class I, class T>
-void csr_tocsc(const I n_row, const I n_col, const I Ap[], const I Aj[],
-               const T Ax[], I Bp[], I Bi[], T Bx[], bool weighted) {
-  const I nnz = Ap[n_row];
+ * Compute B = A for CSR matrix A, CSC matrix B.
+ * Heterogeneous types: `P` for row/column pointers (xadj), `V` for vertex ids
+ * (adjncy), and `T` for edge weights. */
+template <class P, class V, class T>
+void csr_tocsc(const V n_row, const V n_col, const P Ap[], const V Aj[],
+               const T Ax[], P Bp[], V Bi[], T Bx[], bool weighted) {
+  const P nnz = Ap[n_row];
   // compute number of non-zero entries per column of A
-  std::fill(Bp, Bp + n_col, 0);
-  for (I n = 0; n < nnz; n++) {
+  std::fill(Bp, Bp + n_col, static_cast<P>(0));
+  for (P n = 0; n < nnz; n++) {
     Bp[Aj[n]]++;
   }
   // cumsum the nnz per column to get Bp[]
-  for (I col = 0, cumsum = 0; col < n_col; col++) {
-    I temp = Bp[col];
+  P cumsum = 0;
+  for (V col = 0; col < n_col; col++) {
+    P temp = Bp[col];
     Bp[col] = cumsum;
     cumsum += temp;
   }
   Bp[n_col] = nnz;
-  for (I row = 0; row < n_row; row++) {
-    for (I jj = Ap[row]; jj < Ap[row + 1]; jj++) {
-      I col = Aj[jj];
-      I dest = Bp[col];
+  for (V row = 0; row < n_row; row++) {
+    for (P jj = Ap[row]; jj < Ap[row + 1]; jj++) {
+      V col = Aj[jj];
+      P dest = Bp[col];
       Bi[dest] = row;
       // Bx[dest] = Ax[jj];
       Bp[col]++;
     }
   }
-  for (I col = 0, last = 0; col <= n_col; col++) {
-    I temp = Bp[col];
+  P last = 0;
+  for (V col = 0; col <= n_col; col++) {
+    P temp = Bp[col];
     Bp[col] = last;
     last = temp;
   }
@@ -310,13 +334,15 @@ public:
     needWeight = G.needWeight;
     numNode = G.numNode;
     numEdge = G.numEdge;
-    H_ERR(cudaMallocManaged(&xadj, (numNode + 1) * sizeof(vtx_t)));
+    H_ERR(cudaMallocManaged(&xadj, (numNode + 1) * sizeof(edge_t)));
     H_ERR(cudaMallocManaged(&adjncy, numEdge * sizeof(vtx_t)));
     if (needWeight)
       H_ERR(cudaMallocManaged(&adjwgt, numEdge * sizeof(weight_t)));
     LOG("transferring CSR to CSC\n");
-    csr_tocsc<vtx_t, weight_t>(numNode, numNode, G.xadj, G.adjncy, G.adjwgt,
-                               xadj, adjncy, adjwgt, needWeight);
+    csr_tocsc<edge_t, vtx_t, weight_t>(static_cast<vtx_t>(numNode),
+                                       static_cast<vtx_t>(numNode), G.xadj,
+                                       G.adjncy, G.adjwgt, xadj, adjncy, adjwgt,
+                                       needWeight);
   }
 };
 

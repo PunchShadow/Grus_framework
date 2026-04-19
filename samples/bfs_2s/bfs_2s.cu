@@ -19,8 +19,8 @@ DECLARE_int32(src);
 DECLARE_bool(pull);
 namespace bfs_2s {
 
-__global__ void BFS_2SInit(uint *label, int nnodes, vtx_t source) {
-  int tid = TID_1D;
+__global__ void BFS_2SInit(vtx_t *label, vtx_t nnodes, vtx_t source) {
+  size_t tid = TID_1D;
   if (tid < nnodes) {
     label[tid] = tid == source ? 0 : INFINIT;
   }
@@ -28,18 +28,18 @@ __global__ void BFS_2SInit(uint *label, int nnodes, vtx_t source) {
 // template<typename graph_t>
 class job_t {
 public:
-  uint src;
-  uint *label;
-  uint itr = 0;
+  vtx_t src;
+  vtx_t *label;
+  vtx_t itr = 0;
   vtx_t numNode;
   weight_t *adjwgt = nullptr;
-  void operator()(vtx_t _numNode, uint _src) {
+  void operator()(vtx_t _numNode, vtx_t _src) {
     numNode = _numNode;
     src = _src;
     init();
   }
   void init() {
-    H_ERR(cudaMallocManaged(&label, numNode * sizeof(uint)));
+    H_ERR(cudaMallocManaged(&label, numNode * sizeof(vtx_t)));
     BFS_2SInit<<<numNode / BLOCK_SIZE + 1, BLOCK_SIZE>>>(label, numNode, src);
   }
   void prepare() {}
@@ -54,7 +54,7 @@ public:
 
 struct updater {
   __forceinline__ __device__ bool operator()(vtx_t src, vtx_t dst,
-                                             vtx_t edge_id, job_t job) {
+                                             edge_t edge_id, job_t job) {
     if (job.label[dst] > job.itr + 1) {
       job.label[dst] = job.itr + 1;
       return true;

@@ -69,8 +69,9 @@ public:
     // flag_to_wl<<<numNode / BLOCK_SIZE + 1, BLOCK_SIZE, 0, NULL>>>(wl1, flag2,
     //                                                               numNode);
     // std::swap(wl_remote,wl_local)
-    uint flag_num, *flag_num_ptr;
-    cudaMalloc(&flag_num_ptr, sizeof(uint));
+    vtx_t flag_num, *flag_num_ptr;
+    cudaMalloc(&flag_num_ptr, sizeof(vtx_t));
+    H_ERR(cudaMemsetAsync(flag_num_ptr, 0, sizeof(vtx_t)));
     worklist::get_flag_num<<<numNode / BLOCK_SIZE + 1, BLOCK_SIZE, 0, NULL>>>(
         flag2, numNode, flag_num_ptr);
     H_ERR(cudaMemcpy(&flag_num, flag_num_ptr, sizeof(vtx_t),

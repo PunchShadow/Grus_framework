@@ -14,19 +14,19 @@ DECLARE_string(output);
 DECLARE_int32(src);
 DECLARE_bool(pull);
 namespace pagerank {
-__global__ void pr_init(float *rank, float *delta, vtx_t *xadj, vtx_t *adjncy,
+__global__ void pr_init(float *rank, float *delta, edge_t *xadj, vtx_t *adjncy,
                         vtx_t numNode) {
   size_t tid = blockDim.x * blockIdx.x + threadIdx.x;
-  vtx_t lid = threadIdx.x % 32;
-  vtx_t wpid = tid / 32;
+  uint lid = threadIdx.x % 32;
+  vtx_t wpid = static_cast<vtx_t>(tid / 32);
   if (wpid < numNode) {
     vtx_t id = wpid;
-    vtx_t start = xadj[id];
+    edge_t start = xadj[id];
     if (lid == 0)
       rank[id] = 1.0 - ALPHA;
-    vtx_t degree = (xadj[id + 1] - xadj[id]);
+    uint degree = static_cast<uint>(xadj[id + 1] - xadj[id]);
     float update = ((1.0 - ALPHA) * ALPHA) / degree;
-    for (size_t i = start + lid; i < xadj[id + 1]; i += 32) {
+    for (edge_t i = start + lid; i < xadj[id + 1]; i += 32) {
       atomicAdd(&delta[adjncy[i]], update);
     }
   }
@@ -45,12 +45,12 @@ __global__ void pr_dd0(float *rank, float *delta, float *delta2, vtx_t wl_sz) {
 class job_t {
 public:
   float *rank, *delta, *delta2;
-  uint itr = 0;
+  vtx_t itr = 0;
   vtx_t numNode;
   weight_t *adjwgt = nullptr;
   // uint *out_degree;
-  vtx_t *xadj;
-  void operator()(vtx_t _numNode, uint *_xadj) {
+  edge_t *xadj;
+  void operator()(vtx_t _numNode, edge_t *_xadj) {
     numNode = _numNode;
     xadj = _xadj;
     init();
@@ -71,13 +71,13 @@ public:
 #endif
   }
   __forceinline__ __device__ uint get_out_degree(vtx_t id) {
-    return xadj[id + 1] - xadj[id];
+    return static_cast<uint>(xadj[id + 1] - xadj[id]);
   }
 };
 
 struct updater {
   __forceinline__ __device__ bool operator()(vtx_t src, vtx_t dst,
-                                             vtx_t edge_id, job_t job) {
+                                             edge_t edge_id, job_t job) {
     float dt, update, res;
     res = job.delta2[src];
     update = res * ALPHA / job.get_out_degree(src);
