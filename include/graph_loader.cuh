@@ -334,7 +334,6 @@ public:
         G.outDegree, std::max_element(G.outDegree, G.outDegree + num_Node)));
     printf("vtx %llu has max out degree %u\n", (unsigned long long)maxD,
            G.outDegree[maxD]);
-    readew = false;
     if (sizeEdgeTy) {
       if (num_Edge % 2)
         if (fseek(fpin, 4, SEEK_CUR) != 0) // skip

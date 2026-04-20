@@ -31,14 +31,35 @@ __global__ void pr_init(float *rank, float *delta, edge_t *xadj, vtx_t *adjncy,
     }
   }
 }
+// Residual-preserving drain. Matches EMOGI semantics: a vertex is "processed"
+// (rank += delta; delta → delta2 for propagation; delta reset) only when its
+// accumulated residual exceeds the convergence threshold. Vertices with
+// residual ≤ EPSILON keep their delta so small contributions can add up over
+// multiple iterations instead of being silently absorbed into rank without
+// ever reaching out-neighbors.
 __global__ void pr_dd0(float *rank, float *delta, float *delta2, vtx_t wl_sz) {
   size_t tid = blockDim.x * blockIdx.x + threadIdx.x;
   if (tid < wl_sz) {
-    float res;
-    res = delta[tid];
+    float res = delta[tid];
+    if (res > EPSILON) {
+      rank[tid] += res;
+      delta2[tid] = res;
+      delta[tid] = 0.0;
+    } else {
+      delta2[tid] = 0.0;
+      // delta[tid] is left unchanged — keeps accumulating residual.
+    }
+  }
+}
+// One-shot pass to fold any sub-threshold residuals left in `delta` into
+// `rank` after the main loop terminates. Ensures parity with EMOGI which
+// accumulates residual into `value` at each processed iteration — otherwise
+// a tail of small deltas would be lost to the output.
+__global__ void pr_finalize(float *rank, float *delta, vtx_t numNode) {
+  size_t tid = blockDim.x * blockIdx.x + threadIdx.x;
+  if (tid < numNode) {
+    rank[tid] += delta[tid];
     delta[tid] = 0.0;
-    delta2[tid] = res;
-    rank[tid] += res;
   }
 }
 // template<typename graph_t>
@@ -59,9 +80,17 @@ public:
     H_ERR(cudaMallocManaged(&rank, numNode * sizeof(float)));
     H_ERR(cudaMallocManaged(&delta, numNode * sizeof(float)));
     H_ERR(cudaMallocManaged(&delta2, numNode * sizeof(float)));
+    // cudaMallocManaged does not zero-init; pr_init's atomicAdds would
+    // otherwise scatter onto indeterminate values.
+    H_ERR(cudaMemset(rank, 0, numNode * sizeof(float)));
+    H_ERR(cudaMemset(delta, 0, numNode * sizeof(float)));
+    H_ERR(cudaMemset(delta2, 0, numNode * sizeof(float)));
   }
   void prepare() { // cudaStream_t *stream = NULL
     pr_dd0<<<numNode / 1024 + 1, 1024>>>(rank, delta, delta2, numNode);
+  }
+  void finalize() {
+    pr_finalize<<<numNode / 1024 + 1, 1024>>>(rank, delta, numNode);
   }
   void clean() {
 // __host__ __device__ ~job_t() {
@@ -78,10 +107,13 @@ public:
 struct updater {
   __forceinline__ __device__ bool operator()(vtx_t src, vtx_t dst,
                                              edge_t edge_id, job_t job) {
-    float dt, update, res;
-    res = job.delta2[src];
-    update = res * ALPHA / job.get_out_degree(src);
-    dt = atomicAdd(&job.delta[dst], update);
+    float res = job.delta2[src];
+    // Sources with no fresh residual this iteration produce no-op scatters.
+    // Skipping them avoids ~billions of atomicAdd(·, 0) calls on iter 1
+    // (when the full-frontier initializer hands us every vertex).
+    if (res == 0.0f) return false;
+    float update = res * ALPHA / job.get_out_degree(src);
+    float dt = atomicAdd(&job.delta[dst], update);
     if ((dt + update > EPSILON) && (dt < EPSILON)) {
       return true;
     }
@@ -199,6 +231,10 @@ bool PR_single_gpu() {
     F.Next();
     job.itr++;
   }
+  // Absorb any sub-threshold residual left in delta so rank matches what
+  // EMOGI's value[] would contain at the same point.
+  job.finalize();
+  cudaDeviceSynchronize();
   cout << "itr " << job.itr << " in " << t.Finish() << endl;
   job.clean();
   return 0;
