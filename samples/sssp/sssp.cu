@@ -51,11 +51,20 @@ public:
 struct updater {
   __forceinline__ __device__ bool operator()(vtx_t src, vtx_t dst,
                                              edge_t edge_id, job_t job) {
-    if (job.label[dst] > job.label[src] + job.adjwgt[edge_id]) {
-      job.label[dst] = job.label[src] + job.adjwgt[edge_id];
-      return true;
-    }
-    return false;
+    // Relax edge (src → dst). Before the fix this was a plain check-then-write,
+    // which races when multiple srcs in the same iteration push to the same
+    // dst with different src.label + weight values — the last writer could
+    // overwrite the smaller value, leaving label[dst] at a non-minimal cost
+    // that subsequent iterations may not recover from (a source that already
+    // pushed and left the frontier will not re-push).
+    // atomicMin returns the old value, so we know whether *this* thread
+    // actually shortened the distance.
+    weight_t new_cost = job.label[src] + job.adjwgt[edge_id];
+    // Skip relaxations from unreachable sources — src.label = INFINIT would
+    // otherwise wrap around to a small value and poison label[dst].
+    if (job.label[src] >= INFINIT) return false;
+    weight_t old = atomicMin(&job.label[dst], new_cost);
+    return old > new_cost;
   }
 };
 struct generator {
