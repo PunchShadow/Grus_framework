@@ -13,6 +13,7 @@ DECLARE_string(input);
 DECLARE_string(output);
 DECLARE_int32(src);
 DECLARE_bool(pull);
+DECLARE_int32(max_iter);
 namespace pagerank {
 __global__ void pr_init(float *rank, float *delta, edge_t *xadj, vtx_t *adjncy,
                         vtx_t numNode) {
@@ -187,7 +188,8 @@ bool PR_pull_single_gpu() {
   kernel_pull<pagerank::updater, pagerank::generator, pagerank::pull_selector,
               pagerank::job_t>
       K;
-  while (!F.finish()) {
+  vtx_t max_iter_cap = (FLAGS_max_iter > 0) ? static_cast<vtx_t>(FLAGS_max_iter) : static_cast<vtx_t>(~0u >> 1);
+  while (!F.finish() && job.itr < max_iter_cap) {
     // cout << "itr " << job.itr << " wl_sz " << F.wl_sz << endl;
     K(G, F, job);
     cudaDeviceSynchronize();
@@ -195,6 +197,7 @@ bool PR_pull_single_gpu() {
     F.Next();
     job.itr++;
   }
+  fprintf(stderr, "[grus] pr iterations completed: %d\n", (int)job.itr);
   cout << "itr " << job.itr << " in " << t.Finish() << endl;
   return 0;
 }
@@ -223,7 +226,8 @@ bool PR_single_gpu() {
   kernel<graph_t<CSR>, frontier::Frontier<BDF>, pagerank::updater,
          pagerank::generator, pagerank::job_t>
       K;
-  while (!F.finish()) {
+  vtx_t max_iter_cap = (FLAGS_max_iter > 0) ? static_cast<vtx_t>(FLAGS_max_iter) : static_cast<vtx_t>(~0u >> 1);
+  while (!F.finish() && job.itr < max_iter_cap) {
     // cout << "itr " << job.itr << " wl_sz " << F.wl_sz << endl;
     K(G, F, job);
     cudaDeviceSynchronize();
@@ -235,6 +239,7 @@ bool PR_single_gpu() {
   // EMOGI's value[] would contain at the same point.
   job.finalize();
   cudaDeviceSynchronize();
+  fprintf(stderr, "[grus] pr iterations completed: %d\n", (int)job.itr);
   cout << "itr " << job.itr << " in " << t.Finish() << endl;
   job.clean();
   return 0;
