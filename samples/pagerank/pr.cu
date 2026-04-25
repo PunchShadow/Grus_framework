@@ -14,6 +14,7 @@ DECLARE_string(output);
 DECLARE_int32(src);
 DECLARE_bool(pull);
 DECLARE_int32(max_iter);
+DECLARE_bool(no_um_cache);
 namespace pagerank {
 __global__ void pr_init(float *rank, float *delta, edge_t *xadj, vtx_t *adjncy,
                         vtx_t numNode) {
@@ -189,11 +190,18 @@ bool PR_pull_single_gpu() {
               pagerank::job_t>
       K;
   vtx_t max_iter_cap = (FLAGS_max_iter > 0) ? static_cast<vtx_t>(FLAGS_max_iter) : static_cast<vtx_t>(~0u >> 1);
+  const size_t pull_xadj_bytes = (G.numNode + 1) * sizeof(edge_t);
+  const size_t pull_adjncy_bytes = G.numEdge * sizeof(vtx_t);
   while (!F.finish() && job.itr < max_iter_cap) {
     // cout << "itr " << job.itr << " wl_sz " << F.wl_sz << endl;
     K(G, F, job);
     cudaDeviceSynchronize();
     // H_ERR(cudaStreamSynchronize(stream));
+    if (FLAGS_no_um_cache) {
+      cudaMemPrefetchAsync(G.xadj, pull_xadj_bytes, cudaCpuDeviceId, stream);
+      cudaMemPrefetchAsync(G.adjncy, pull_adjncy_bytes, cudaCpuDeviceId, stream);
+      cudaStreamSynchronize(stream);
+    }
     F.Next();
     job.itr++;
   }
@@ -227,11 +235,18 @@ bool PR_single_gpu() {
          pagerank::generator, pagerank::job_t>
       K;
   vtx_t max_iter_cap = (FLAGS_max_iter > 0) ? static_cast<vtx_t>(FLAGS_max_iter) : static_cast<vtx_t>(~0u >> 1);
+  const size_t push_xadj_bytes = (G.numNode + 1) * sizeof(edge_t);
+  const size_t push_adjncy_bytes = G.numEdge * sizeof(vtx_t);
   while (!F.finish() && job.itr < max_iter_cap) {
     // cout << "itr " << job.itr << " wl_sz " << F.wl_sz << endl;
     K(G, F, job);
     cudaDeviceSynchronize();
     // H_ERR(cudaStreamSynchronize(stream));
+    if (FLAGS_no_um_cache) {
+      cudaMemPrefetchAsync(G.xadj, push_xadj_bytes, cudaCpuDeviceId, stream);
+      cudaMemPrefetchAsync(G.adjncy, push_adjncy_bytes, cudaCpuDeviceId, stream);
+      cudaStreamSynchronize(stream);
+    }
     F.Next();
     job.itr++;
   }

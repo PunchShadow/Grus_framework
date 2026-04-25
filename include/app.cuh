@@ -20,6 +20,7 @@ DEFINE_string(output, "", "output result file");
 DEFINE_int32(src, 0, "app src");
 DEFINE_int32(ngpu, 1, "GPU number, 1 for single-GPU version ");
 DEFINE_int32(max_iter, 0, "cap PR iterations (0 = unlimited)");
+DEFINE_bool(no_um_cache, false, "Force UM pages back to host between iterations (disables Grus's natural UM caching)");
 
 DEFINE_double(wl_th, 0.5, "wl switch threshold");
 // DEFINE_bool(one, false, "process one by one");
