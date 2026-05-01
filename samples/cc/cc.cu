@@ -101,21 +101,15 @@ __global__ void cc_bidir_push_kernel(graph_t G, worklist::Worklist wl_c,
   vtx_t wpid = static_cast<vtx_t>(tid / 32);
   if (wpid < *wl_c.count) {
     vtx_t src = wl_c.data[wpid];
+    // Push-only CC (Thievory/HyTGraph-style): SV-style pull-back removed.
     for (edge_t edge_id = G.xadj[src] + laneid; edge_id < G.xadj[src + 1];
          edge_id += 32) {
-      // Re-read label[src] each iteration: another thread in this warp
-      // (or elsewhere) may have atomic-min'd it down already, and we want
-      // the current value for the comparison so we don't propagate a stale
-      // (larger) label to dst.
       vtx_t ls = label[src];
       vtx_t dst = G.adjncy[edge_id];
       vtx_t ld = label[dst];
       if (ls < ld) {
         atomicMin(&label[dst], ls);
         flag2[dst] = 1;
-      } else if (ld < ls) {
-        atomicMin(&label[src], ld);
-        flag2[src] = 1;
       }
     }
   }
@@ -136,6 +130,7 @@ __global__ void cc_bidir_pull_kernel(graph_t G, worklist::Worklist wl_c,
   vtx_t wpid = static_cast<vtx_t>(tid / 32);
   if (wpid < *wl_c.count) {
     vtx_t dst = wl_c.data[wpid];
+    // Push-only CC: SV-style pull-back removed (CSC variant).
     for (edge_t edge_id = G.xadj[dst] + laneid; edge_id < G.xadj[dst + 1];
          edge_id += 32) {
       vtx_t src = G.adjncy[edge_id];
@@ -144,9 +139,6 @@ __global__ void cc_bidir_pull_kernel(graph_t G, worklist::Worklist wl_c,
       if (ls < ld) {
         atomicMin(&label[dst], ls);
         flag2[dst] = 1;
-      } else if (ld < ls) {
-        atomicMin(&label[src], ld);
-        flag2[src] = 1;
       }
     }
   }
@@ -232,16 +224,14 @@ bool CC_single_gpu() {
   }
   cudaSetDevice(FLAGS_device);
   H_ERR(cudaDeviceReset());
-  // Load CSR (out-edges) and build CSC (in-edges) up-front. The CC kernel
-  // makes two passes per iteration — push on CSR and pull on CSC — which
-  // together exercise every logical undirected edge and fixes the
-  // over-fragmentation seen on directed inputs (sk-2005, uk-2007-05).
+  // Push-only CC (Thievory/HyTGraph-style): single CSR pass per iteration.
+  // The CSC pull pass that previously fixed directed-input over-fragmentation
+  // is intentionally disabled here so Grus matches the unidirectional
+  // propagation semantics of Thievory and HyTGraph.
   graph_t<CSR> G;
   graph_loader loader;
   loader.Load(G, false);
-  graph_t<CSC> Gc;
-  Gc.CSR2CSC(G);
-  LOG("CC single\n");
+  LOG("CC single (push-only)\n");
   cudaStream_t stream;
   cudaStreamCreate(&stream);
   cc::job_t job;
@@ -249,21 +239,13 @@ bool CC_single_gpu() {
   frontier::Frontier<BDF> F; // BDF  BDF_AUTO BITMAP
   F.Init(G.numNode, FLAGS_src, FLAGS_device, 1.0, true);
   G.Set_Mem_Policy(&stream);
-  Gc.Set_Mem_Policy(&stream);
   cudaDeviceSynchronize();
   Timer t;
   t.Start();
   while (!F.finish()) {
     uint grid = F.get_work_size_h() / (BLOCK_SIZE >> 5) + 1;
-    // Pass 1: CSR out-edges. Each frontier vertex pushes its label to its
-    // out-neighbours (and pulls from them when they're smaller).
     cc::cc_bidir_push_kernel<graph_t<CSR>>
         <<<grid, BLOCK_SIZE>>>(G, *F.wl_c, F.flag2, job.label);
-    // Pass 2: CSC in-edges. Each frontier vertex reconciles with its
-    // in-neighbours — specifically this is what propagates labels to
-    // zero-in-degree vertices once their out-neighbours drop.
-    cc::cc_bidir_pull_kernel<graph_t<CSC>>
-        <<<grid, BLOCK_SIZE>>>(Gc, *F.wl_c, F.flag2, job.label);
     cudaDeviceSynchronize();
     F.Next();
     job.itr++;
